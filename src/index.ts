@@ -13,6 +13,7 @@ import proposalRouter from "./routes/proposal.route";
 import developmentRouter from "./routes/development.route";
 import drepRouter from "./routes/drep.route";
 import analyticsRouter from "./routes/analytics.route";
+import aiRouter from "./routes/ai.route";
 import { apiKeyAuth } from "./middleware/auth.middleware";
 import { startAllJobs } from "./jobs";
 
@@ -54,6 +55,7 @@ app.use("/proposal", apiKeyAuth, proposalRouter);
 app.use("/development", apiKeyAuth, developmentRouter);
 app.use("/dreps", apiKeyAuth, drepRouter);
 app.use("/analytics", apiKeyAuth, analyticsRouter);
+app.use("/ai", apiKeyAuth, aiRouter);
 
 // Error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
