@@ -12,7 +12,17 @@ interface ChatRequestBody {
   sessionId?: string;
   walletAddress?: string;
   context?: string;
+  /**
+   * Sidanclaw destroy-and-regenerate retry/edit. UUID of a user message
+   * in the same session — that row and every subsequent row are deleted
+   * upstream before the new turn is appended, and the model gets a hint
+   * to pick a different angle.
+   */
+  truncateFromMessageId?: string;
 }
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * POST /ai/chat
@@ -32,8 +42,18 @@ export const postChat = async (req: Request, res: Response) => {
       .json({ error: "AI assistant is not configured on the server" });
   }
 
-  const { message, sessionId, walletAddress, context } =
+  const { message, sessionId, walletAddress, context, truncateFromMessageId } =
     (req.body || {}) as ChatRequestBody;
+
+  if (
+    truncateFromMessageId !== undefined &&
+    (typeof truncateFromMessageId !== "string" ||
+      !UUID_PATTERN.test(truncateFromMessageId))
+  ) {
+    return res
+      .status(400)
+      .json({ error: "truncateFromMessageId must be a UUID" });
+  }
 
   if (
     !walletAddress ||
@@ -66,6 +86,7 @@ export const postChat = async (req: Request, res: Response) => {
         externalUserId: `cgov:${walletAddress}`,
         sessionId,
         message: composedMessage,
+        ...(truncateFromMessageId ? { truncateFromMessageId } : {}),
       },
       {
         headers: {
