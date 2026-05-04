@@ -3,6 +3,7 @@ import { VoterType, VoteType } from "@prisma/client";
 import { prisma } from "../../services";
 import { GetDRepDetailResponse, VoteBreakdown } from "../../responses";
 import { formatAxiosLikeError } from "../../utils/format-http-client-error";
+import { normalizeDrepIdToCip129 } from "../../utils/drep-id";
 
 /**
  * Converts lovelace (BigInt) to ADA string with 6 decimal places
@@ -18,14 +19,19 @@ function lovelaceToAda(lovelace: bigint): string {
  */
 export const getDRepDetail = async (req: Request, res: Response) => {
   try {
-    const drepId = req.params.drepId as string;
+    const rawDrepId = req.params.drepId as string;
 
-    if (!drepId) {
+    if (!rawDrepId) {
       return res.status(400).json({
         error: "Missing drepId",
         message: "A drepId path parameter is required",
       });
     }
+
+    // The DB and Koios use CIP-129 throughout. Accept CIP-105 too —
+    // older tooling and the AI assistant still emit it occasionally —
+    // and convert before any lookup so users don't hit phantom 404s.
+    const drepId = normalizeDrepIdToCip129(rawDrepId);
 
     // Fetch DRep details
     const drep = await prisma.drep.findUnique({

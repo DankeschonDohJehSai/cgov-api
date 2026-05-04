@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import axios from "axios";
 import { formatAxiosLikeError } from "../../utils/format-http-client-error";
+import { stripContextPreamble } from "./_compose";
 
 const WALLET_ADDRESS_PATTERN =
   /^(addr|addr_test|stake|stake_test)1[0-9a-z]{20,}$/;
@@ -94,9 +95,19 @@ export const getHistory = async (req: Request, res: Response) => {
     }
 
     const data = upstream.data;
+    // Strip the per-turn context preamble that POST /ai/chat welds onto
+    // the first user turn (proposal description, rationale, etc.). The
+    // model needs to see it; the cgov chat UI does not — without this,
+    // the user's bubble would render the entire system context.
+    const rawMessages = Array.isArray(data?.messages) ? data.messages : [];
+    const messages = rawMessages.map((m) =>
+      m.role === "user"
+        ? { ...m, content: stripContextPreamble(m.content) }
+        : m,
+    );
     return res.status(200).json({
       sessionId: data?.sessionId ?? sessionId,
-      messages: Array.isArray(data?.messages) ? data.messages : [],
+      messages,
     });
   } catch (error) {
     console.error("ai/chat history proxy error:", formatAxiosLikeError(error));

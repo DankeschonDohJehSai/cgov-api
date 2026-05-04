@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { prisma } from "../../services";
 import { GetDRepHistoryResponse, DRepHistoryDataPoint } from "../../responses";
 import { formatAxiosLikeError } from "../../utils/format-http-client-error";
+import { normalizeDrepIdToCip129 } from "../../utils/drep-id";
 
 /**
  * Converts lovelace (BigInt) to ADA string with 6 decimal places
@@ -18,14 +19,16 @@ function lovelaceToAda(lovelace: bigint): string {
  */
 export const getDRepHistory = async (req: Request, res: Response) => {
   try {
-    const drepId = req.params.drepId as string;
+    const rawDrepId = req.params.drepId as string;
 
-    if (!drepId) {
+    if (!rawDrepId) {
       return res.status(400).json({
         error: "Missing drepId",
         message: "A drepId path parameter is required",
       });
     }
+
+    const drepId = normalizeDrepIdToCip129(rawDrepId);
 
     // Verify DRep exists
     const drep = await prisma.drep.findUnique({

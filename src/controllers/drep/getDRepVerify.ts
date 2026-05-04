@@ -3,17 +3,20 @@ import { prisma } from "../../services";
 import { GetDRepVerifyResponse } from "../../responses";
 import { getDrepInfoBatch } from "../../services/drep-lookup";
 import { formatAxiosLikeError } from "../../utils/format-http-client-error";
+import { normalizeDrepIdToCip129 } from "../../utils/drep-id";
 
 export const getDRepVerify = async (req: Request, res: Response) => {
   try {
-    const drepId = req.params.drepId as string;
+    const rawDrepId = req.params.drepId as string;
 
-    if (!drepId) {
+    if (!rawDrepId) {
       return res.status(400).json({
         error: "Missing drepId",
         message: "A drepId path parameter is required",
       });
     }
+
+    const drepId = normalizeDrepIdToCip129(rawDrepId);
 
     const drep = await prisma.drep.findUnique({
       where: { drepId },

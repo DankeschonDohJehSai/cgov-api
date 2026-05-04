@@ -11,7 +11,6 @@ interface ChatRequestBody {
   message?: string;
   sessionId?: string;
   walletAddress?: string;
-  context?: string;
   /**
    * Sidanclaw destroy-and-regenerate retry/edit. UUID of a user message
    * in the same session — that row and every subsequent row are deleted
@@ -42,7 +41,7 @@ export const postChat = async (req: Request, res: Response) => {
       .json({ error: "AI assistant is not configured on the server" });
   }
 
-  const { message, sessionId, walletAddress, context, truncateFromMessageId } =
+  const { message, sessionId, walletAddress, truncateFromMessageId } =
     (req.body || {}) as ChatRequestBody;
 
   if (
@@ -75,17 +74,13 @@ export const postChat = async (req: Request, res: Response) => {
       .json({ error: `Message exceeds ${MAX_MESSAGE_LENGTH} character limit` });
   }
 
-  const composedMessage = context
-    ? `${context}\n\n---\n\nUser question: ${message}`
-    : message;
-
   try {
     const upstream = await axios.post(
       `${baseUrl}/api/v1/assistants/${assistantId}/messages`,
       {
         externalUserId: `cgov:${walletAddress}`,
         sessionId,
-        message: composedMessage,
+        message,
         ...(truncateFromMessageId ? { truncateFromMessageId } : {}),
       },
       {

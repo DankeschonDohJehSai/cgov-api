@@ -3,6 +3,7 @@ import { VoterType } from "@prisma/client";
 import { prisma } from "../../services";
 import { GetDRepVotesResponse, DRepVoteRecord } from "../../responses";
 import { formatAxiosLikeError } from "../../utils/format-http-client-error";
+import { normalizeDrepIdToCip129 } from "../../utils/drep-id";
 
 /**
  * Extracts rationale text from vote metadata JSON
@@ -54,14 +55,16 @@ function extractRationaleText(rationale: string | null): string | null {
  */
 export const getDRepVotes = async (req: Request, res: Response) => {
   try {
-    const drepId = req.params.drepId as string;
+    const rawDrepId = req.params.drepId as string;
 
-    if (!drepId) {
+    if (!rawDrepId) {
       return res.status(400).json({
         error: "Missing drepId",
         message: "A drepId path parameter is required",
       });
     }
+
+    const drepId = normalizeDrepIdToCip129(rawDrepId);
 
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize as string) || 20));
