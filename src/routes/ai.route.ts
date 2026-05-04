@@ -59,4 +59,69 @@ const router = express.Router();
  */
 router.post("/chat", aiController.postChat);
 
+/**
+ * @openapi
+ * /ai/chat/history:
+ *   get:
+ *     summary: Read AI chat history for a wallet
+ *     description: Returns prior session messages so the cgov frontend can self-heal after a refresh or tab close that interrupted a reply.
+ *     tags:
+ *       - AI
+ *     parameters:
+ *       - name: walletAddress
+ *         in: query
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Cardano bech32 address (addr/stake, mainnet or testnet)
+ *       - name: scope
+ *         in: query
+ *         required: false
+ *         schema:
+ *           type: string
+ *           default: "global"
+ *         description: Conversation scope (e.g. "global" or a proposal id) — must match the value used when sending
+ *       - name: limit
+ *         in: query
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 200
+ *     responses:
+ *       200:
+ *         description: Session history (may be empty)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sessionId:
+ *                   type: string
+ *                 messages:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       role:
+ *                         type: string
+ *                         enum: [user, assistant]
+ *                       content:
+ *                         type: string
+ *                       sequenceNum:
+ *                         type: integer
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *       401:
+ *         description: Wallet address missing or malformed
+ *       500:
+ *         description: AI assistant not configured
+ *       502:
+ *         description: Upstream history fetch failed
+ */
+router.get("/chat/history", aiController.getHistory);
+
 export default router;
