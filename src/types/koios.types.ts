@@ -300,6 +300,26 @@ export interface KoiosDrepDelegator {
 }
 
 /**
+ * Stake Account History from Koios API
+ * Endpoint: POST /account_history
+ *
+ * Body: { _stake_addresses: [...], _epoch_no?: 510 }
+ * Response shape: array of entries, each with `stake_address` and a nested
+ * `history[]` of per-epoch records. When `_epoch_no` is set, the inner
+ * `history[]` contains at most one row (filtered to that epoch).
+ */
+export interface KoiosAccountHistoryRecord {
+  pool_id: string;
+  epoch_no: number;
+  active_stake: string; // lovelace, as string (BigInt-safe)
+}
+
+export interface KoiosAccountHistoryEntry {
+  stake_address: string;
+  history: KoiosAccountHistoryRecord[];
+}
+
+/**
  * Stake Account Update History from Koios API
  * Endpoint: POST /account_update_history
  */
