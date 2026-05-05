@@ -41,6 +41,10 @@ model Drep {
   doNotList      Boolean?      @map("do_not_list")
   votingPower           BigInt                 @default(0) @map("voting_power")
   delegatorCount Int?          @map("delegator_count")
+  // Denormalised — populated by drep-denorm.service after each epoch sync.
+  // Read by /dreps LIST + /snapshot/dreps to avoid expensive groupBys at request time.
+  firstSeenEpoch                Int?     @map("first_seen_epoch")
+  proposalParticipationPercent  Float?   @map("proposal_participation_percent")
   registered            Boolean?               @map("registered")
   active                Boolean?               @map("active")
   expiresEpoch          Int?                   @map("expires_epoch")
@@ -130,13 +134,56 @@ model StakeDelegationChange {
   toDrepId       String   @default("") @map("to_drep_id") // "" = no new DRep
   delegatedEpoch Int      @default(-1) @map("delegated_epoch_no") // -1 = unknown
   observedAt     DateTime @default(now()) @map("observed_at")
+  // active_stake at delegatedEpoch from Koios /account_history (nullable until ingestion populates).
+  amountAtSwitch BigInt?  @map("amount_at_switch")
+  // "koios-history" | "current-proxy" | "unknown" — provenance for amountAtSwitch.
+  amountSource   String?  @map("amount_source")
 
   stakeAddressRef StakeAddress @relation(fields: [stakeAddress], references: [stakeAddress])
 
   @@unique([stakeAddress, fromDrepId, toDrepId, delegatedEpoch])
   @@index([stakeAddress])
   @@index([toDrepId])
+  @@index([delegatedEpoch])
+  @@index([delegatedEpoch, fromDrepId, toDrepId])
   @@map("stake_delegation_change")
+}
+
+// Pre-rendered snapshot bodies for /snapshot endpoints.
+// Each row holds one composed JSON payload (gzipped) keyed by cacheKey.
+// Final chunks are immutable — written once when the chunk's last epoch finalises.
+// Manifest + dreps + current chunk are rewritten by snapshotBuilder.rebuildAfterEpoch.
+model SnapshotCache {
+  cacheKey       String   @id @map("cache_key")
+  body           Bytes
+  generatedAt    DateTime @map("generated_at")
+  schemaVersion  String   @map("schema_version")
+  isFinal        Boolean  @default(false) @map("is_final")
+  byteSize       Int      @map("byte_size")
+  etag           String
+  lastAccessedAt DateTime @updatedAt @map("last_accessed_at")
+
+  @@index([lastAccessedAt])
+  @@map("snapshot_cache")
+}
+
+// Pre-aggregated migrations grouped by (epoch, fromDrepId, toDrepId).
+// Refreshed after each sync-drep-delegators run completes.
+// Uses amount_at_switch (Koios /account_history) when available, otherwise falls back to
+// current StakeDelegationState.amount. Source distribution is reported via /migrations meta.accuracy.
+model MigrationAggregate {
+  epoch       Int
+  fromDrepId  String   @map("from_drep_id")
+  toDrepId    String   @map("to_drep_id")
+  adaLovelace BigInt   @default(0) @map("ada_lovelace")
+  delegators  Int      @default(0)
+  computedAt  DateTime @default(now()) @map("computed_at")
+
+  @@id([epoch, fromDrepId, toDrepId])
+  @@index([epoch])
+  @@index([fromDrepId])
+  @@index([toDrepId])
+  @@map("migration_aggregate")
 }
 
 // Global sync state for delegation change ingestion.
@@ -374,6 +421,7 @@ model Proposal {
 
   @@unique([txHash, certIndex])
   @@index([txHash])
+  @@index([submissionEpoch])
   @@map("proposal")
 }
 
