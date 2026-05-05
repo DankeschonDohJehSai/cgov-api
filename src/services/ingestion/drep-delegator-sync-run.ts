@@ -7,6 +7,7 @@ import {
   syncDrepDelegationChanges,
   type SyncDrepDelegationChangesResult,
 } from "./delegation-sync.service";
+import { refreshMigrationAggregateWithResilience } from "./migration-aggregate.service";
 import { prisma as defaultPrisma } from "../prisma";
 
 export const DREP_DELEGATOR_SYNC_JOB_NAME = "drep-delegator-sync";
@@ -61,6 +62,17 @@ export async function runDrepDelegatorSyncWithDailyRetry(
     completedSyncCalls === 2
       ? sumProcessed(r1) + sumProcessed(last)
       : sumProcessed(last);
+
+  // Refresh MigrationAggregate after the changelog is up-to-date.
+  // Best-effort — never fail the sync run for an aggregation hiccup.
+  try {
+    const aggResult = await refreshMigrationAggregateWithResilience(db, 0);
+    console.log(
+      `[migration-aggregate] refreshed ${aggResult.rowsWritten} rows in ${aggResult.durationMs}ms`
+    );
+  } catch (e) {
+    console.error("[migration-aggregate] refresh failed", e);
+  }
 
   return {
     kind: "completed",
