@@ -70,6 +70,7 @@ import {
 } from "./epoch-totals.service";
 import { syncDrepLifecycleEvents, type SyncDrepLifecycleResult } from "./drep-lifecycle.service";
 import { syncPoolGroups, type SyncPoolGroupsResult } from "./pool-groups.service";
+import { rebuildAfterEpoch } from "./snapshot-builder.service";
 import { refreshDrepDenormColumnsWithResilience } from "./drep-denorm.service";
 
 // ============================================================
@@ -515,8 +516,8 @@ export async function syncEpochTotalsStep(
   // Always refresh current epoch totals (they change throughout the epoch).
   result.currentEpochTotals = await syncEpochTotals(prisma, currentEpoch);
 
-  // Refresh Drep denorm columns so /dreps LIST + downstream consumers get
-  // fresh firstSeenEpoch + proposalParticipationPercent without on-fly groupBys.
+  // Refresh Drep denorm columns — needed BEFORE snapshot rebuild so dreps blob
+  // pulls the fresh participation/firstSeenEpoch values.
   try {
     const denorm = await refreshDrepDenormColumnsWithResilience();
     if (denorm.firstSeenUpdated > 0 || denorm.participationUpdated > 0) {
@@ -526,6 +527,19 @@ export async function syncEpochTotalsStep(
     }
   } catch (e) {
     console.error("[drep-denorm] refresh failed", e);
+  }
+
+  // Snapshot rebuild — best-effort, never fail the totals sync for a snapshot hiccup.
+  // Triggers on every successful run (cheap when nothing changed: dreps + current chunk only).
+  try {
+    const rebuild = await rebuildAfterEpoch(currentEpoch);
+    if (rebuild.finalisedChunk) {
+      console.log(
+        `[snapshot-builder] finalised chunk ${rebuild.finalisedChunk.start}-${rebuild.finalisedChunk.end} (${rebuild.finalisedChunk.byteSize}B); current epoch ${rebuild.currentEpoch}; total ${rebuild.durationMs}ms`
+      );
+    }
+  } catch (e) {
+    console.error("[snapshot-builder] rebuildAfterEpoch failed", e);
   }
 
   return result;

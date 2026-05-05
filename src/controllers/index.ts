@@ -10,6 +10,7 @@ export * as aiController from "./ai";
 export * as epochsController from "./epochs";
 export * as actionsController from "./actions";
 export * as migrationsController from "./migrations";
+export * as snapshotController from "./snapshot";
 
 export const placeholderGet = (_req: Request, res: Response) => {
   res.status(200).json({ success: true, message: "GET request successful" });

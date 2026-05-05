@@ -18,9 +18,11 @@ import aiRouter from "./routes/ai.route";
 import epochsRouter from "./routes/epochs.route";
 import actionsRouter from "./routes/actions.route";
 import migrationsRouter from "./routes/migrations.route";
+import snapshotRouter from "./routes/snapshot.route";
 import { apiKeyAuth } from "./middleware/auth.middleware";
 import { requestLog } from "./middleware/request-log.middleware";
 import { startAllJobs } from "./jobs";
+import { bootRecover as snapshotBootRecover } from "./services/ingestion/snapshot-builder.service";
 
 dotenv.config();
 
@@ -62,6 +64,7 @@ if (fs.existsSync(swaggerPath)) {
 app.use("/epochs", epochsRouter);
 app.use("/actions", actionsRouter);
 app.use("/migrations", migrationsRouter);
+app.use("/snapshot", snapshotRouter);
 
 // Apply API key authentication to protected routes
 app.use("/data", apiKeyAuth, dataRouter);
@@ -87,6 +90,16 @@ if (process.env.DISABLE_CRON_IN_API !== "true") {
   startAllJobs();
 } else {
   console.log("Cron jobs disabled in API process (running in separate service)");
+}
+
+// Snapshot boot recovery — non-blocking; fires a one-shot rebuild if SnapshotCache
+// is empty/stale at startup. Skipped in test envs to keep specs hermetic.
+if (process.env.NODE_ENV !== "test" && process.env.DISABLE_SNAPSHOT_BOOT_RECOVER !== "true") {
+  setImmediate(() => {
+    snapshotBootRecover().catch((e) =>
+      console.error("[snapshot-builder] boot-recover async failed", e)
+    );
+  });
 }
 
 // Start the server
