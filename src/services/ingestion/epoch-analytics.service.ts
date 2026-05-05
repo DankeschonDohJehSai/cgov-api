@@ -70,6 +70,7 @@ import {
 } from "./epoch-totals.service";
 import { syncDrepLifecycleEvents, type SyncDrepLifecycleResult } from "./drep-lifecycle.service";
 import { syncPoolGroups, type SyncPoolGroupsResult } from "./pool-groups.service";
+import { refreshDrepDenormColumnsWithResilience } from "./drep-denorm.service";
 
 // ============================================================
 // Orchestration Types
@@ -513,6 +514,19 @@ export async function syncEpochTotalsStep(
 
   // Always refresh current epoch totals (they change throughout the epoch).
   result.currentEpochTotals = await syncEpochTotals(prisma, currentEpoch);
+
+  // Refresh Drep denorm columns so /dreps LIST + downstream consumers get
+  // fresh firstSeenEpoch + proposalParticipationPercent without on-fly groupBys.
+  try {
+    const denorm = await refreshDrepDenormColumnsWithResilience();
+    if (denorm.firstSeenUpdated > 0 || denorm.participationUpdated > 0) {
+      console.log(
+        `[drep-denorm] refreshed firstSeen=${denorm.firstSeenUpdated} participation=${denorm.participationUpdated} in ${denorm.durationMs}ms`
+      );
+    }
+  } catch (e) {
+    console.error("[drep-denorm] refresh failed", e);
+  }
 
   return result;
 }

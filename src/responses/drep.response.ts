@@ -17,6 +17,10 @@ export interface DRepSummary {
   totalVotesCast: number;
   /** Number of delegators to this DRep */
   delegatorCount: number | null;
+  /** First registration epoch from drep_lifecycle_event; null until lifecycle ingestion catches up */
+  firstSeenEpoch: number | null;
+  /** Distinct proposals voted on / total proposals * 100, rounded to 2 decimal places */
+  proposalParticipationPercent: number;
 }
 
 /**
