@@ -4,3 +4,7 @@ export * from "./proposal.response";
 export * from "./development.response";
 export * from "./drep.response";
 export * from "./analytics.response";
+export * from "./epochs.response";
+export * from "./actions.response";
+export * from "./migrations.response";
+export * from "./snapshot.response";

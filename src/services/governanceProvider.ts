@@ -14,6 +14,7 @@ import {
   chunkArray,
 } from "./ingestion/sync-utils";
 import type {
+  KoiosAccountHistoryEntry,
   KoiosAccountInfo,
   KoiosAccountUpdateHistoryEntry,
   KoiosCommitteeInfo,
@@ -756,6 +757,95 @@ export async function getAccountUpdateHistoryBatch(
     getRowKey: (row) =>
       `${row.stake_address ?? ""}|${row.tx_hash ?? ""}|${row.epoch_no ?? ""}|${row.epoch_slot ?? ""}|${row.absolute_slot ?? ""}|${row.action_type ?? ""}`,
   });
+}
+
+/**
+ * POST /account_history with `_epoch_no` set — returns one row per stake
+ * address giving `active_stake` (lovelace) at the START of that epoch.
+ * Chunks by serialised body byte size (KOIOS_PUBLIC_MAX_BODY_BYTES) so the
+ * free-tier 1 KB payload cap doesn't reject calls — same chunking style as
+ * /account_info.
+ */
+function buildAccountHistoryRequestBody(
+  stakeAddresses: string[],
+  epochNo?: number
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { _stake_addresses: stakeAddresses };
+  if (typeof epochNo === "number") body._epoch_no = epochNo;
+  return body;
+}
+
+function estimateAccountHistoryBodyUtf8Bytes(
+  stakeAddresses: string[],
+  epochNo?: number
+): number {
+  return Buffer.byteLength(
+    JSON.stringify(buildAccountHistoryRequestBody(stakeAddresses, epochNo)),
+    "utf8"
+  );
+}
+
+function chunkStakeAddressesForAccountHistory(
+  stakeAddresses: string[],
+  epochNo?: number,
+  maxBodyBytes: number = KOIOS_PUBLIC_MAX_BODY_BYTES
+): string[][] {
+  const unique = Array.from(
+    new Set(
+      stakeAddresses.filter((a): a is string => typeof a === "string" && a.length > 0)
+    )
+  );
+  if (unique.length === 0) return [];
+
+  const chunks: string[][] = [];
+  let current: string[] = [];
+  for (const addr of unique) {
+    const candidate = current.length === 0 ? [addr] : [...current, addr];
+    if (
+      current.length > 0 &&
+      estimateAccountHistoryBodyUtf8Bytes(candidate, epochNo) > maxBodyBytes
+    ) {
+      chunks.push(current);
+      current = [addr];
+    } else {
+      current = candidate;
+    }
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
+export async function getAccountHistoryBatch(opts: {
+  stakeAddresses: string[];
+  epochNo?: number;
+  source?: string;
+  signal?: GovernanceProviderOptions["signal"];
+  onRetryAttempt?: GovernanceProviderOptions["onRetryAttempt"];
+}): Promise<KoiosAccountHistoryEntry[]> {
+  const chunks = chunkStakeAddressesForAccountHistory(opts.stakeAddresses, opts.epochNo);
+  if (chunks.length === 0) return [];
+
+  const results: KoiosAccountHistoryEntry[] = [];
+  const baseDelayMs = 75;
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i]!;
+    const pressureState = getKoiosPressureState();
+    const delayMs = (i > 0 ? baseDelayMs : 0) + (pressureState.active ? 150 : 0);
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    const page = await koiosPost<KoiosAccountHistoryEntry[]>(
+      "/account_history",
+      buildAccountHistoryRequestBody(chunk, opts.epochNo),
+      toKoiosContext({
+        source: opts.source,
+        signal: opts.signal,
+        onRetryAttempt: opts.onRetryAttempt,
+      })
+    );
+    if (page?.length) results.push(...page);
+  }
+  return results;
 }
 
 function buildTxInfoRequestBody(

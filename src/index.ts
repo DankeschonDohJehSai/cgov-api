@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import express, { Request, Response, NextFunction } from "express";
 import bodyParser from "body-parser";
+import compression from "compression";
 import cors from "cors";
 import helmet from "helmet";
 import swaggerUi from "swagger-ui-express";
@@ -14,8 +15,14 @@ import developmentRouter from "./routes/development.route";
 import drepRouter from "./routes/drep.route";
 import analyticsRouter from "./routes/analytics.route";
 import aiRouter from "./routes/ai.route";
+import epochsRouter from "./routes/epochs.route";
+import actionsRouter from "./routes/actions.route";
+import migrationsRouter from "./routes/migrations.route";
+import snapshotRouter from "./routes/snapshot.route";
 import { apiKeyAuth } from "./middleware/auth.middleware";
+import { requestLog } from "./middleware/request-log.middleware";
 import { startAllJobs } from "./jobs";
+import { bootRecover as snapshotBootRecover } from "./services/ingestion/snapshot-builder.service";
 
 dotenv.config();
 
@@ -32,9 +39,15 @@ app.use(helmet());
 // Security: CORS - allow all origins
 app.use(cors());
 
+// Compress JSON / text responses (read endpoints can be multi-MB)
+app.use(compression());
+
 // Note: Rate limiting is handled by Cloudflare
 
 app.use(bodyParser.json());
+
+// Per-request access log on the read endpoints used by drep-lens et al.
+app.use(requestLog);
 
 // Serve Swagger documentation from static file (no auth required)
 const swaggerPath = path.join(__dirname, "../docs/swagger.json");
@@ -46,6 +59,12 @@ if (fs.existsSync(swaggerPath)) {
     "⚠️  Swagger file not found. Run 'npm run swagger:generate' to create it."
   );
 }
+
+// Public read-only endpoints intended for browser clients (drep-lens, etc.)
+app.use("/epochs", epochsRouter);
+app.use("/actions", actionsRouter);
+app.use("/migrations", migrationsRouter);
+app.use("/snapshot", snapshotRouter);
 
 // Apply API key authentication to protected routes
 app.use("/data", apiKeyAuth, dataRouter);
@@ -71,6 +90,16 @@ if (process.env.DISABLE_CRON_IN_API !== "true") {
   startAllJobs();
 } else {
   console.log("Cron jobs disabled in API process (running in separate service)");
+}
+
+// Snapshot boot recovery — non-blocking; fires a one-shot rebuild if SnapshotCache
+// is empty/stale at startup. Skipped in test envs to keep specs hermetic.
+if (process.env.NODE_ENV !== "test" && process.env.DISABLE_SNAPSHOT_BOOT_RECOVER !== "true") {
+  setImmediate(() => {
+    snapshotBootRecover().catch((e) =>
+      console.error("[snapshot-builder] boot-recover async failed", e)
+    );
+  });
 }
 
 // Start the server

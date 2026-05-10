@@ -75,10 +75,18 @@ export const getDReps = async (req: Request, res: Response) => {
         iconUrl: true,
         votingPower: true,
         delegatorCount: true,
+        firstSeenEpoch: true,
+        proposalParticipationPercent: true,
       },
     });
 
-    // Get vote counts for each DRep
+    const allColumnsPopulated = dreps.every(
+      (d) => d.firstSeenEpoch != null && d.proposalParticipationPercent != null
+    );
+
+    // Get vote counts. firstSeenEpoch + participation are read directly from
+    // denormalised columns when populated; we only fall back to on-fly groupBy
+    // if the denorm refresh hasn't run yet (fresh DB / boot before first epoch sync).
     const drepIds = dreps.map((d) => d.drepId);
     const voteCounts = await prisma.onchainVote.groupBy({
       by: ["drepId"],
@@ -89,11 +97,51 @@ export const getDReps = async (req: Request, res: Response) => {
       _count: { id: true },
     });
 
-    // Create a map of drepId -> vote count
     const voteCountMap = new Map<string, number>();
     for (const vc of voteCounts) {
-      if (vc.drepId) {
-        voteCountMap.set(vc.drepId, vc._count.id);
+      if (vc.drepId) voteCountMap.set(vc.drepId, vc._count.id);
+    }
+
+    const firstSeenEpochMap = new Map<string, number>();
+    const participationMap = new Map<string, number>();
+
+    if (!allColumnsPopulated) {
+      // Cold-start fallback — recompute firstSeenEpoch + participation on the fly.
+      console.warn(
+        "[getDReps] denorm columns not yet populated for some DReps; falling back to on-fly groupBy. Run /data/snapshot/rebuild or wait for the next epoch-totals sync."
+      );
+      const [lifecycleRegs, drepProposalPairs, totalProposals] = await Promise.all([
+        prisma.drepLifecycleEvent.groupBy({
+          by: ["drepId"],
+          where: { drepId: { in: drepIds }, action: "registration" },
+          _min: { epochNo: true },
+        }),
+        prisma.onchainVote.groupBy({
+          by: ["drepId", "proposalId"],
+          where: {
+            drepId: { in: drepIds },
+            voterType: VoterType.DREP,
+          },
+        }),
+        prisma.proposal.count(),
+      ]);
+
+      for (const row of lifecycleRegs) {
+        if (row._min.epochNo != null) firstSeenEpochMap.set(row.drepId, row._min.epochNo);
+      }
+      const distinctProposalsMap = new Map<string, number>();
+      for (const pair of drepProposalPairs) {
+        if (!pair.drepId) continue;
+        distinctProposalsMap.set(pair.drepId, (distinctProposalsMap.get(pair.drepId) ?? 0) + 1);
+      }
+      for (const id of drepIds) {
+        const distinctVoted = distinctProposalsMap.get(id) ?? 0;
+        participationMap.set(
+          id,
+          totalProposals > 0
+            ? Math.round((distinctVoted / totalProposals) * 100 * 100) / 100
+            : 0
+        );
       }
     }
 
@@ -106,6 +154,10 @@ export const getDReps = async (req: Request, res: Response) => {
       votingPowerAda: lovelaceToAda(drep.votingPower),
       totalVotesCast: voteCountMap.get(drep.drepId) || 0,
       delegatorCount: drep.delegatorCount,
+      firstSeenEpoch:
+        drep.firstSeenEpoch ?? firstSeenEpochMap.get(drep.drepId) ?? null,
+      proposalParticipationPercent:
+        drep.proposalParticipationPercent ?? participationMap.get(drep.drepId) ?? 0,
     }));
 
     // If sorting by totalVotes, we need to sort in memory after getting counts

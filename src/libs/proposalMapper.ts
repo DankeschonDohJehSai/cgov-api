@@ -104,7 +104,7 @@ const statusLabelMap: Record<ProposalStatus, GovernanceAction["status"]> = {
 /**
  * Maps database GovernanceType enum to full display labels
  */
-const governanceTypeLabelMap: Record<GovernanceType, string> = {
+export const governanceTypeLabelMap: Record<GovernanceType, string> = {
   INFO_ACTION: "Info Action",
   TREASURY_WITHDRAWALS: "Treasury Withdrawals",
   NEW_CONSTITUTION: "New Constitution",

@@ -25,6 +25,7 @@ import { postTriggerDrepLifecycleSync } from "../controllers/data/triggerDrepLif
 import { postTriggerPoolGroupsSync } from "../controllers/data/triggerPoolGroupsSync";
 import { postTriggerMissingEpochsSync } from "../controllers/data/triggerMissingEpochsSync";
 import { postTriggerDrepDelegatorSync } from "../controllers/data/triggerDrepDelegatorSync";
+import { postTriggerSnapshotRebuild } from "../controllers/data/triggerSnapshotRebuild";
 import { postUploadToIpfs } from "../controllers/data/uploadToIpfs";
 
 const router = express.Router();
@@ -438,6 +439,40 @@ router.post("/trigger-missing-epochs-sync", postTriggerMissingEpochsSync);
  *         description: Sync failed
  */
 router.post("/trigger-drep-delegator-sync", postTriggerDrepDelegatorSync);
+
+// ─── Snapshot Rebuild (drep-lens) ───────────────────────────────────────────
+
+/**
+ * @openapi
+ * /data/snapshot/rebuild:
+ *   post:
+ *     summary: Force a drep-lens snapshot rebuild
+ *     description: |
+ *       Rebuilds the SnapshotCache (dreps + current chunk + manifest) on demand.
+ *       Use after a schemaVersion bump or backfill that should bypass the
+ *       once-per-epoch automatic rebuild from epoch-analytics.
+ *     tags:
+ *       - Data Ingestion
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               epoch:
+ *                 type: integer
+ *                 description: "Optional explicit current-epoch override; defaults to MAX(EpochTotals.epoch)"
+ *               invalidate:
+ *                 type: boolean
+ *                 description: "Drop all in-memory L1 cache entries first"
+ *     responses:
+ *       200:
+ *         description: Rebuild succeeded; SnapshotCache rows updated
+ *       500:
+ *         description: Rebuild failed
+ */
+router.post("/snapshot/rebuild", postTriggerSnapshotRebuild);
 
 // ─── IPFS Upload ────────────────────────────────────────────────────────────
 
